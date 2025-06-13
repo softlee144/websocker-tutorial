@@ -1,5 +1,7 @@
 package org.devock.tutorial.websocket.controller;
 
+import java.io.IOException;
+import java.security.InvalidParameterException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Random;
@@ -144,6 +146,25 @@ public class StompController {
 		remove.cancel(true);
 
 	}
+	
+	@MessageMapping("/exception")
+    @SendTo("/topic/hello")
+    public void exception(ReqDto request, MessageHeaders headers) throws Exception {
+        log.info("request: {}", request);
+        String message = request.getMessage();
+        switch(message) {
+            case "runtime":
+                throw new RuntimeException();
+            case "nullPointer":
+                throw new NullPointerException();
+            case "io":
+                throw new IOException();
+            case "exception":
+                throw new Exception();
+            default:
+                throw new InvalidParameterException();
+        }
+    }
 	
 	
 
