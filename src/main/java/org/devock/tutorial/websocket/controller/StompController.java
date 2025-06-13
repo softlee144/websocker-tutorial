@@ -1,7 +1,11 @@
 package org.devock.tutorial.websocket.controller;
 
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.Random;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 
 import org.devock.tutorial.websocket.dto.ReqDto;
 import org.devock.tutorial.websocket.dto.ResDto;
@@ -17,8 +21,8 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.SimpMessageType;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.messaging.simp.annotation.SendToUser;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PathVariable;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -30,9 +34,14 @@ public class StompController {
 	
 	private final SimpMessagingTemplate messagingTemplate;
 	
-	public StompController(StompEventListener eventListener, SimpMessagingTemplate messagingTemplate) {
+	private final TaskScheduler taskScheduler;
+	
+	private final ConcurrentHashMap<String, ScheduledFuture<?>> sessionMap = new ConcurrentHashMap<>();
+	
+	public StompController(StompEventListener eventListener, SimpMessagingTemplate messagingTemplate, TaskScheduler taskScheduler) {
 		this.eventListener = eventListener;
 		this.messagingTemplate = messagingTemplate;
+		this.taskScheduler = taskScheduler;
 	}
 
 	@MessageMapping("/hello")    // /app/hello
@@ -104,5 +113,38 @@ public class StompController {
         headerAccessor.setLeaveMutable(true);
         return headerAccessor.getMessageHeaders();
     }
+	
+	@MessageMapping({"/start"})	// /app/start
+	public void start(ReqDto reqDto, MessageHeaders headers) {
+		log.info("start =================================");
+		log.info("headers: {}", headers);
+		String sessionId = headers.get("simpSessionId").toString();
+		log.info("sessionId: {}", sessionId);
+		
+		// 3초마다 실행
+		ScheduledFuture<?> scheduledFuture = taskScheduler.scheduleAtFixedRate(() -> {
+			Random random = new Random();
+			int currentPrice = random.nextInt(100);
+			messagingTemplate.convertAndSendToUser(sessionId, "/queue/trade", currentPrice, createHeaders(sessionId));
+		}, Duration.ofSeconds(3));
+		
+		// sessionMap에 scheduledFuture 정보 보관
+		sessionMap.put(sessionId, scheduledFuture);
+	}
+	
+	@MessageMapping({"/stop"})	// /app/stop
+	public void stop(ReqDto reqDto, MessageHeaders headers) {
+		log.info("stop =================================");
+		log.info("headers: {}", headers);
+		String sessionId = headers.get("simpSessionId").toString();
+		log.info("sessionId: {}", sessionId);
+		
+		// start 메소드에서 실행되던 데이터를 cancel시키기 위함
+		ScheduledFuture<?> remove = sessionMap.remove(sessionId);
+		remove.cancel(true);
+
+	}
+	
+	
 
 }
